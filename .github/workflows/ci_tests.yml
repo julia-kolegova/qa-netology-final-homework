@@ -1,0 +1,36 @@
+name: Automated tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test_runner:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      - name: setup Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
+      - name: install dependencies
+        run: pip install -r requirements.txt
+      - name: run web client
+        shell: bash
+        run: | 
+          cd dist
+          python -m http.server 8000 &
+      - name: Wait for web client (cmd + curl)
+        shell: bash
+        run: |
+          for i in $(seq 1 30); do
+            curl --fail http://localhost:8000 && echo "Server is up!" && exit 0
+            echo "Waiting for server... Attempt $i"
+            sleep 2
+          done
+          echo "Server did not start within the given time."
+          exit 1
+      - name: Run tests
+        run: python -m unittest discover -s tests -v
