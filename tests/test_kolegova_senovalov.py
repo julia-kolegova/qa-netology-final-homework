@@ -1,4 +1,4 @@
-import unittest
+import pytest
 
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
@@ -13,25 +13,27 @@ from selenium.webdriver.support import expected_conditions as EC
 BASE_URL = "http://localhost:8000"
 
 
-class TestSenovalov(unittest.TestCase):
-    def setUp(self) -> None:
-        chrome_options = ChromeOptions()
+@pytest.fixture
+def driver(request):
+    chrome_options = ChromeOptions()
 
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-infobars")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    service = ChromeService(executable_path=ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
 
-        service = ChromeService(executable_path=ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.driver.implicitly_wait(60)
+    request.cls.driver = driver
+    yield
+    driver.quit()
 
-    def tearDown(self) -> None:
-        self.driver.quit()
 
+@pytest.mark.usefixtures("driver")
+class TestSenovalov:
     def find_element(self, path: str) -> WebElement:
-        entity = WebDriverWait(self.driver, 60).until(
+        entity = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
@@ -114,18 +116,18 @@ class TestSenovalov(unittest.TestCase):
         self.card_input("5559000000000000")
         self.amount_input("1000")
         initial_fee = self.get_fee_value()
-        self.assertTrue(int(initial_fee) == 100, "Комиссия не равна 100 ₽")
+        assert int(initial_fee) == 100
         exception_message = self.get_exception_message()
-        self.assertIsNone(exception_message)
+        assert exception_message is None
         send_button = self.get_send_button()
-        self.assertIsNotNone(send_button)
+        assert send_button is not None
         self.send_money(send_button)
 
         toast = self.get_toast()
-        self.assertIsNotNone(toast)
-        self.assertIn("принят", toast.lower())
+        assert toast is not None
+        assert "принят" in toast.lower()
         balance_el = self.get_ruble_balance()
-        self.assertTrue(balance_el == 0, "Баланс должен быть равен 0")
+        assert balance_el == 0
 
     # ---------- TC-012 ---------- #
     def test_amount_with_comma(self):
@@ -135,13 +137,13 @@ class TestSenovalov(unittest.TestCase):
         self.card_input("5559000000000000")
         self.amount_input("1234,56")
         fee = self.get_fee_value()
-        self.assertTrue(int(fee) == 123, "Комиссия должна быть 123 ₽")
+        assert int(fee) == 123
 
         send_button = self.get_send_button()
-        self.assertIsNotNone(send_button)
+        assert send_button is not None
         self.send_money(send_button)
         toast = self.get_toast()
-        self.assertIn("принят", toast.lower())
+        assert "принят" in toast.lower()
 
     # ---------- TC-013 ---------- #
     def test_amount_with_thousand_separator(self):
@@ -151,12 +153,12 @@ class TestSenovalov(unittest.TestCase):
         self.card_input("5559000000000000")
         self.amount_input("1 000")            # ввод с пробелом
         amount_val = self.amount_input("1 000")
-        self.assertEqual(amount_val, "1000", "Разделитель тысяч не убран")
+        assert amount_val == "1000"
 
         send_button = self.get_send_button()
-        self.assertIsNotNone(send_button)
+        assert send_button is not None
         self.send_money(send_button)
-        self.assertIn("принят", self.get_toast().lower())
+        assert "принят" in self.get_toast().lower()
 
     # ---------- TC-014 ---------- #
     def test_amount_more_than_two_decimals(self):
@@ -165,14 +167,14 @@ class TestSenovalov(unittest.TestCase):
 
         self.card_input("5559000000000000")
         amount = self.amount_input("1234,567")         # 3 знака после запятой
-        self.assertEqual(amount, "1234,567")
+        assert amount == "1234,567"
 
         # должно появиться сообщение об ошибке и кнопка стать неактивной
         exception_message = self.get_exception_message()
-        self.assertIsNotNone(exception_message)
+        assert exception_message is not None
 
         send_button = self.get_send_button()
-        self.assertIsNone(send_button)
+        assert send_button is None
 
     # ---------- TC-015 ---------- #
     def test_float_balance_coma(self):
@@ -182,11 +184,11 @@ class TestSenovalov(unittest.TestCase):
         2) 3 000 ₽ во второй вкладке должен быть отклонён.
         """
         # первая вкладка
-        self.driver.get(url='http://localhost:8000/?balance=1000,50&reserved=2000')
+        self.driver.get(url=f'{BASE_URL}/?balance=1000,50&reserved=2000')
 
         ruble_balance = self.get_ruble_balance()
-        self.assertTrue(self.is_decimal_string(ruble_balance))
-        self.assertEqual(float(ruble_balance), 1000.50, "Balance should be a number")
+        assert self.is_decimal_string(ruble_balance) is True
+        assert float(ruble_balance) == 1000.50
 
     def test_float_balance_dot(self):
         """
@@ -194,8 +196,8 @@ class TestSenovalov(unittest.TestCase):
         1) 2 000 ₽ проходит.
         2) 3 000 ₽ во второй вкладке должен быть отклонён.
         """
-        self.driver.get(url='http://localhost:8000/?balance=1000.50&reserved=2000')
+        self.driver.get(url=f'{BASE_URL}/?balance=1000.50&reserved=2000')
 
         ruble_balance = self.get_ruble_balance()
-        self.assertTrue(self.is_decimal_string(ruble_balance))
-        self.assertEqual(float(ruble_balance), 1000.50, "Balance should be a number")
+        assert self.is_decimal_string(ruble_balance) is True
+        assert float(ruble_balance) == 1000.50
