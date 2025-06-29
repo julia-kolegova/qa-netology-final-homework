@@ -1,4 +1,4 @@
-import unittest
+import pytest
 
 from selenium import webdriver
 from webdriver_manager.chrome import ChromeDriverManager
@@ -10,25 +10,30 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
 
-class TestKlosep(unittest.TestCase):
-    def setUp(self) -> None:
-        chrome_options = ChromeOptions()
+BASE_URL = "http://localhost:8000/"
 
-        chrome_options.add_argument("--window-size=1920,1080")
-        chrome_options.add_argument("--headless")
-        chrome_options.add_argument("--disable-infobars")
-        chrome_options.add_argument("--no-sandbox")
-        chrome_options.add_argument("--disable-dev-shm-usage")
 
-        service = ChromeService(executable_path=ChromeDriverManager().install())
-        self.driver = webdriver.Chrome(service=service, options=chrome_options)
-        self.driver.implicitly_wait(60)
+@pytest.fixture
+def driver(request):
+    chrome_options = ChromeOptions()
 
-    def tearDown(self) -> None:
-        self.driver.quit()
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-infobars")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    service = ChromeService(executable_path=ChromeDriverManager().install())
+    driver = webdriver.Chrome(service=service, options=chrome_options)
 
+    request.cls.driver = driver
+    yield
+    driver.quit()
+
+
+@pytest.mark.usefixtures("driver")
+class TestKlosep:
     def find_element(self, path: str) -> WebElement:
-        entity = WebDriverWait(self.driver, 60).until(
+        entity = WebDriverWait(self.driver, 10).until(
             EC.element_to_be_clickable(
                 (
                     By.XPATH,
@@ -99,37 +104,37 @@ class TestKlosep(unittest.TestCase):
         return alert_text
 
     def test_incorrect_balance_and_reserve(self):
-        self.get_url("http://localhost:8000/?balance=330%1.4&reserved=!")
+        self.get_url(f"{BASE_URL}?balance=330%1.4&reserved=!")
         ruble_balance = self.get_ruble_balance()
         ruble_reserve = self.get_ruble_reserve()
-        self.assertEqual(ruble_balance, "NaN", "Balance should be NaN")
-        self.assertEqual(ruble_reserve, "NaN", "Reserve should be NaN")
+        assert ruble_balance == "NaN"
+        assert ruble_reserve == "NaN"
 
     def test_reserve_more_then_balance(self):
-        self.get_url(url='http://localhost:8000/?balance=33001&reserved=330014')
+        self.get_url(url=f'{BASE_URL}?balance=33001&reserved=330014')
         ruble_balance = self.get_ruble_balance()
         ruble_reserve = self.get_ruble_reserve()
-        self.assertLessEqual(int(ruble_reserve), int(ruble_balance), "Reserve <= Balance")
+        assert int(ruble_reserve) <= int(ruble_balance)
 
     def test_negative_balance_and_reserve(self):
-        self.get_url(url='http://localhost:8000/?balance=-33001&reserved=-330014')
+        self.get_url(url=f'{BASE_URL}?balance=-33001&reserved=-330014')
         ruble_balance = self.get_ruble_balance()
         ruble_reserve = self.get_ruble_reserve()
-        self.assertTrue(int(ruble_balance) > 0, "Balance should be positive")
-        self.assertTrue(int(ruble_reserve) > 0, "Reserve should be positive")
+        assert int(ruble_balance) > 0
+        assert int(ruble_reserve) > 0
 
     def test_evro_transaction_amount_more_than_the_amount_on_the_account(self):
-        self.driver.get(url='http://localhost:8000/?balance=33000&reserved=2000')
+        self.driver.get(url=f'{BASE_URL}?balance=33000&reserved=2000')
         self.enable_evro()
         self.card_input("1111111111111111")
         self.amount_input("1500")
         send_button = self.get_send_button()
         exception_message = self.get_exception_message()
-        self.assertIsNone(send_button, "The send button should not exist")
-        self.assertIsNotNone(exception_message, "An error about an invalid transaction should be displayed")
+        assert send_button is None
+        assert exception_message is not None
 
     def test_balance_update_after_transaction(self):
-        self.driver.get(url='http://localhost:8000/?balance=33000&reserved=2000')
+        self.driver.get(url=f'{BASE_URL}?balance=33000&reserved=2000')
         ruble_balance_before_transaction = self.get_ruble_balance()
         self.enable_rubles()
         self.card_input("1111111111111111")
@@ -138,17 +143,14 @@ class TestKlosep(unittest.TestCase):
         self.send_money(button=send_button)
         self.get_alert()
         ruble_balance_after_transaction = self.get_ruble_balance()
-        self.assertTrue(
-            ruble_balance_before_transaction > ruble_balance_after_transaction,
-            "Balance should be changed"
-        )
+        assert ruble_balance_before_transaction > ruble_balance_after_transaction
 
     def test_amount_start_with_zero(self):
-        self.driver.get(url='http://localhost:8000/?balance=33000&reserved=2000')
+        self.driver.get(url=f'{BASE_URL}?balance=33000&reserved=2000')
         self.enable_rubles()
         self.card_input("1111111111111111")
         self.amount_input("000123")
         send_button = self.get_send_button()
         exception_message = self.get_exception_message()
-        self.assertIsNone(send_button, "The send button should not exist")
-        self.assertIsNotNone(exception_message, "An error about an invalid transaction should be displayed")
+        assert send_button is None
+        assert exception_message is not None
